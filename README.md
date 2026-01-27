@@ -413,6 +413,12 @@ notifications:
 
 #### Hooks
 
+Hooks allow you to run custom scripts at different stages of the backup workflow. This is particularly useful for:
+- Database dumps before backup
+- Application-specific preparation (stopping services, creating snapshots, etc.)
+- Cleanup operations after backup
+- Custom notifications or logging
+
 ```yaml
 hooks:
   pre_backup: "/etc/resticm/hooks/pre-backup.sh"
@@ -421,10 +427,109 @@ hooks:
   on_success: "/etc/resticm/hooks/on-success.sh"
 ```
 
+##### Hook Execution Order
+
+1. **pre_backup** - Runs before backup starts
+2. **backup** - Main backup operation
+3. **post_backup** - Runs after backup (success or failure)
+4. **on_error** OR **on_success** - Runs based on overall result
+
+##### Exit Code Handling
+
+**⚠️ Critical**: Hooks use standard Unix exit codes to determine success or failure:
+
+- **Exit 0** - Success, workflow continues
+- **Exit != 0** - Failure, behavior depends on the command
+
+**Behavior on hook failure (exit code != 0):**
+
+| Command | Behavior |
+|---------|----------|
+| `resticm backup` | ❌ **Aborts immediately** - backup is NOT executed |
+| `resticm` (default workflow) | ⚠️ **Continues** - skips backup, but runs forget/copy |
+
+**When `pre_backup` hook fails:**
+- ❌ The backup operation is **skipped** (never executed)
+- 🪝 The `on_error` hook is triggered
+- 📢 Error notifications are sent
+- ⚠️ resticm returns an error code at the end
+- 🔄 Other operations (forget, copy) may continue (in default workflow)
+
+**Recommendation**: Use `resticm backup` explicitly in critical scenarios (like database dumps) to ensure the entire workflow stops if preparation fails. The default workflow (`resticm`) is designed to be resilient and continue with maintenance tasks even if backup fails.
+
+##### Hook Environment Variables
+
 Hook scripts receive environment variables:
 - `BACKUP_STATUS` - "success" or "failure" (post_backup)
 - `BACKUP_ERROR` - Error message if failed (post_backup)
 - `ERROR` - Error message (on_error)
+
+##### Example: PostgreSQL Backup
+
+**pre-backup.sh** - Create database dump:
+```bash
+#!/bin/bash
+set -e  # Exit on any error
+
+BACKUP_DIR="/mnt/backup_temp"
+
+echo "Creating temporary directory..."
+mkdir -p $BACKUP_DIR || exit 1
+
+echo "Dumping PostgreSQL database..."
+if ! docker exec -t postgres_container pg_dumpall -c -U postgres > $BACKUP_DIR/dump.sql; then
+    echo "ERROR: Database dump failed"
+    exit 1
+fi
+
+# Verify dump is not empty
+if [ ! -s $BACKUP_DIR/dump.sql ]; then
+    echo "ERROR: Dump file is empty"
+    exit 1
+fi
+
+echo "Database dump successful: $(du -h $BACKUP_DIR/dump.sql | cut -f1)"
+exit 0
+```
+
+**post-backup.sh** - Cleanup temporary files:
+```bash
+#!/bin/bash
+
+BACKUP_DIR="/mnt/backup_temp"
+
+echo "Cleaning up temporary dump..."
+rm -f $BACKUP_DIR/dump.sql
+
+echo "Cleanup completed"
+exit 0
+```
+
+**Configuration** - Include dump directory in backup:
+```yaml
+directories:
+  - /mnt/backup_temp              # Temporary dump location
+  - /var/lib/docker/volumes       # Other data
+  - /etc
+
+hooks:
+  pre_backup: "/etc/resticm/hooks/pre-backup.sh"
+  post_backup: "/etc/resticm/hooks/post-backup.sh"
+```
+
+This ensures:
+1. Database is dumped **before** backup starts
+2. If dump fails, backup is **aborted** (no incomplete backup)
+3. Temporary dump is **cleaned up** after backup
+4. All operations are **logged** and **monitored**
+
+##### Hook Permissions
+
+Hooks must be:
+- **Executable**: `chmod +x /etc/resticm/hooks/*.sh`
+- **Owned by root** (for system-wide configs): `chown root:root /etc/resticm/hooks/*.sh`
+
+If a hook exists but is not executable, resticm will fail with an error message.
 
 #### Logging
 
