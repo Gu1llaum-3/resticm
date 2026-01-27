@@ -1,0 +1,233 @@
+# Resticm Configuration File
+#
+# This is an example configuration file for resticm.
+# Copy to ~/.config/resticm/config.yaml or /etc/resticm/config.yaml
+#
+# SECURITY: This file contains sensitive credentials.
+# Set permissions to 600: chmod 600 config.yaml
+# Ensure root ownership: chown root:root config.yaml
+
+# ============================================================================
+# PRIMARY REPOSITORY
+# ============================================================================
+
+# Repository URL (required)
+# Formats: 
+#   - s3:s3.amazonaws.com/bucket-name/path
+#   - /path/to/local/repo
+#   - sftp:user@host:/path
+#   - rest:http://host:port/
+repository: "s3:s3.amazonaws.com/my-backup-bucket/restic"
+
+# Repository password (required)
+# Can also be set via RESTIC_PASSWORD environment variable
+password: "your-secure-password-here"
+
+# Alternative: read password from file
+# password_file: "/root/.restic-password"
+
+# AWS credentials for S3 backends
+aws_access_key_id: "AKIAIOSFODNN7EXAMPLE"
+aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+# ============================================================================
+# DIRECTORIES TO BACKUP
+# ============================================================================
+
+directories:
+- /etc
+- /root
+- /home
+- /var/www
+- /var/lib/docker/volumes
+
+# ============================================================================
+# EXCLUSION PATTERNS
+# ============================================================================
+
+exclude_patterns:
+- "*.tmp"
+- "*.log"
+- "*.cache"
+- "**/node_modules/**"
+- "**/.git/**"
+- "**/vendor/**"
+- "**/__pycache__/**"
+- "**/Cache/**"
+- "**/cache/**"
+
+# Alternative: use an exclude file
+# exclude_file: "/etc/resticm/excludes.txt"
+
+# ============================================================================
+# RETENTION POLICY
+# ============================================================================
+
+retention:
+  # Keep all snapshots within this period
+  keep_within: "7d"
+
+  # Keep hourly snapshots for the last N hours
+  keep_hourly: 24
+
+  # Keep daily snapshots for the last N days
+  keep_daily: 7
+
+  # Keep weekly snapshots for the last N weeks
+  keep_weekly: 4
+
+  # Keep monthly snapshots for the last N months
+  keep_monthly: 12
+
+  # Keep yearly snapshots for the last N years
+  keep_yearly: 5
+
+# ============================================================================
+# DEEP CHECK SETTINGS
+# ============================================================================
+
+# Interval in days between full data verification checks
+# Set to 0 to disable automatic deep checks
+deep_check_interval_days: 30
+
+# ============================================================================
+# DEFAULT TAGS
+# ============================================================================
+
+# Tags to add to every backup
+default_tags:
+- automated
+- resticm
+
+# ============================================================================
+# SECONDARY BACKENDS (for replication)
+# ============================================================================
+#
+# ⚠️  IMPORTANT - S3 CREDENTIAL LIMITATIONS:
+# Restic uses GLOBAL environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+# which means you CANNOT use multiple native S3 backends with different credentials.
+#
+# If your primary is S3, ALL other native S3 backends will use the SAME credentials.
+# The aws_access_key_id and aws_secret_access_key fields in secondary S3 backends
+# will be IGNORED.
+#
+# ✅ SOLUTION: Use rclone for additional S3 backends with different credentials.
+# See the "rclone-remote" example below.
+# ============================================================================
+
+backends:
+  # Secondary S3 backend (same AWS account, different region for DR)
+  # ⚠️  WARNING: This will use the PRIMARY's AWS credentials, NOT the ones below!
+  secondary:
+    repository: "s3:s3.eu-west-1.amazonaws.com/my-dr-bucket/restic"
+    password: "secondary-repo-password"
+    # These credentials are IGNORED if primary is also S3:
+    aws_access_key_id: "AKIAIOSFODNN7SECOND"
+    aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYSECOND"
+
+  # Local backup (for fast restores)
+  local:
+    repository: "/mnt/backup/restic"
+    password: "local-repo-password"
+  # Backblaze B2 backend (uses different env vars: B2_ACCOUNT_ID, B2_ACCOUNT_KEY)
+  # b2:
+  #   repository: "b2:my-b2-bucket:restic"
+  #   password: "b2-repo-password"
+
+  # ✅ RECOMMENDED: Rclone backend for S3 with DIFFERENT credentials
+  # This is the ONLY way to use multiple S3 backends with different AWS accounts
+  # Requires rclone to be installed and configured: https://rclone.org/
+  #
+  # Setup:
+  # 1. Install rclone: https://rclone.org/install/
+  # 2. Configure remote: rclone config
+  # 3. Use repository format: rclone:remote-name:bucket/path
+  #
+  # rclone-aws-account-2:
+  #   repository: "rclone:myremote:my-bucket/restic"
+  #   password: "rclone-repo-password"
+  #   # Configure the remote in ~/.config/rclone/rclone.conf:
+  #   # [myremote]
+  #   # type = s3
+  #   # provider = AWS
+  #   # access_key_id = AKIA...DIFFERENT...ACCOUNT
+  #   # secret_access_key = ...DIFFERENT...SECRET...
+  #   # region = us-west-2
+
+  # List of backends to copy to after each backup
+copy_to_backends:
+- secondary
+- local
+
+# ============================================================================
+# HOOKS
+# ============================================================================
+
+hooks:
+  # Script to run before backup (e.g., database dump)
+  pre_backup: "/etc/resticm/hooks/pre-backup.sh"
+
+  # Script to run after successful backup
+  post_backup: "/etc/resticm/hooks/post-backup.sh"
+
+  # Script to run on any error
+  on_error: "/etc/resticm/hooks/on-error.sh"
+
+  # Script to run on success (backup + all operations)
+  on_success: "/etc/resticm/hooks/on-success.sh"
+
+# ============================================================================
+# NOTIFICATIONS
+# ============================================================================
+
+notifications:
+  # Enable notifications
+  enabled: true
+
+  # Notify on successful operations
+  notify_on_success: false
+
+  # Notify on errors (recommended)
+  notify_on_error: true
+
+  # Notification providers
+  providers:
+  # Slack webhook
+  - type: slack
+    url: "https://hooks.slack.com/services/YOUR_WORKSPACE_ID/YOUR_CHANNEL_ID/YOUR_WEBHOOK_TOKEN"
+  # Discord webhook
+  # - type: discord
+  #   url: "https://discord.com/api/webhooks/123456789/abcdefg"
+
+  # ntfy.sh (self-hosted or public)
+  # - type: ntfy
+  #   url: "https://ntfy.sh"
+  #   options:
+  #     topic: "my-backup-alerts"
+
+  # Generic webhook
+  # - type: webhook
+  #   url: "https://example.com/api/webhook"
+
+  # ============================================================================
+  # LOGGING
+  # ============================================================================
+
+logging:
+  # Log file path
+  file: "/var/log/resticm/resticm.log"
+
+  # Maximum log file size in MB before rotation
+  max_size_mb: 10
+
+  # Number of rotated log files to keep
+  max_files: 5
+
+  # Log level: debug, info, warn, error
+  level: "info"
+
+  # Also output to console
+  console: true
+
+  # Use JSON format (useful for log aggregation)
+  json: false
