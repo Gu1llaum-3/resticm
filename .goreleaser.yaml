@@ -1,0 +1,73 @@
+version: 2
+project_name: resticm
+
+before:
+  hooks:
+  - go mod tidy
+  - go test ./...
+
+builds:
+- id: resticm
+  main: ./main.go
+  binary: resticm
+  goos:
+  - linux
+  goarch:
+  - amd64
+  - arm64
+  - "386"
+  - arm
+  goarm:
+  - "6"
+  - "7"
+  env:
+  - CGO_ENABLED=0
+  ldflags:
+  - -s -w
+  - -X resticm/cmd.version={{.Version}}
+  - -X resticm/cmd.commit={{.Commit}}
+  - -X resticm/cmd.buildDate={{.Date}}
+  flags:
+  - -trimpath
+
+archives:
+- id: resticm
+  formats: [ "tar.gz" ]
+  name_template: >-
+    {{ .ProjectName }}_ {{- title .Os }}_ {{- if eq .Arch "amd64" }}x86_64 {{- else if eq .Arch "386" }}i386 {{- else }}{{ .Arch }}{{ end }} {{- if .Arm }}v{{ .Arm }}{{ end }}
+  files:
+  - LICENSE
+  - README.md
+  - config.example.yaml
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+    - "^docs:"
+    - "^test:"
+    - "^ci:"
+    - "^chore:"
+    - "^build:"
+  groups:
+  - title: Features
+    regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+    order: 0
+  - title: Bug fixes
+    regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+    order: 1
+  - title: Others
+    order: 999
+
+# Snapshot builds (for non-tag builds)
+snapshot:
+  version_template: "{{ .Tag }}-snapshot-{{.ShortCommit}}"
+
+# Metadata for package managers
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"

@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release notes
+        uses: softprops/action-gh-release@v1
+        with:
+          body: |
+            ## Resticm ${{ github.ref_name }}
+
+            Thank you for downloading Resticm!
+
+            ## Installation
+
+            ### From Source
+            ```bash
+            git clone https://github.com/Gu1llaum-3/resticm.git
+            cd resticm
+            make build
+            sudo make install
+            ```
+
+            ### Manual Installation
+            Download the appropriate binary for your platform from the assets above, extract it, and place it in your PATH:
+
+            ```bash
+            # Example for Linux amd64
+            tar -xzf resticm_Linux_x86_64.tar.gz
+            sudo mv resticm /usr/local/bin/
+            sudo chmod +x /usr/local/bin/resticm
+            ```
+
+            ### Prerequisites
+            - [restic](https://restic.net/) must be installed and available in your PATH
+            - Go 1.24+ (for building from source)
+
+            ## Quick Start
+
+            1. Create configuration:
+            ```bash
+            mkdir -p ~/.config/resticm
+            cp config.example.yaml ~/.config/resticm/config.yaml
+            chmod 600 ~/.config/resticm/config.yaml
+            ```
+
+            2. Initialize repository:
+            ```bash
+            resticm init
+            ```
+
+            3. Run your first backup:
+            ```bash
+            resticm
+            ```
+
+            ## Full Changelog
+
+            See all changes at https://github.com/Gu1llaum-3/resticm/compare/${{ github.event.before }}...${{ github.ref_name }}
+
+            ---
+
+            📖 **Documentation:** See the updated [README](https://github.com/Gu1llaum-3/resticm/blob/main/README.md)
+
+            🐛 **Issues:** Found a bug? Open an [issue](https://github.com/Gu1llaum-3/resticm/issues)
+
+            ---
+
+            Released with ❤️ by [GoReleaser](https://github.com/goreleaser/goreleaser)
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

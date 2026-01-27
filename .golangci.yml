@@ -1,0 +1,60 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+  - errcheck
+  - staticcheck
+  - govet
+  - ineffassign
+  - unused
+
+linters-settings:
+  errcheck:
+    # Ne pas vérifier les erreurs pour ces fonctions (affichage console)
+    exclude-functions:
+    - (github.com/fatih/color.Color).Println
+    - (github.com/fatih/color.Color).Printf
+    - (github.com/fatih/color.Color).Print
+    - (github.com/fatih/color.Color).Fprintln
+    - (github.com/fatih/color.Color).Fprintf
+    - (github.com/fatih/color.Color).Fprint
+
+issues:
+  exclude-rules:
+  # Ignorer errcheck pour les tests
+  - path: _test\.go
+    linters:
+    - errcheck
+  # Ignorer les erreurs d'affichage console spécifiques
+  - text: "Error return value of.*Println.*is not checked"
+    linters:
+    - errcheck
+  - text: "Error return value of.*Printf.*is not checked"
+    linters:
+    - errcheck
+  - text: "Error return value of.*Print.*is not checked"
+    linters:
+    - errcheck
+  # Ignorer spécifiquement les color functions
+  - text: "Error return value of.*cyan.*is not checked"
+    linters:
+    - errcheck
+  - text: "Error return value of.*bold.*is not checked"
+    linters:
+    - errcheck
+  - text: "Error return value of.*green.*is not checked"
+    linters:
+    - errcheck
+  - text: "Error return value of.*gray.*is not checked"
+    linters:
+    - errcheck
+  - text: "Error return value of.*yellow.*is not checked"
+    linters:
+    - errcheck
+  - text: "Error return value of.*red.*is not checked"
+    linters:
+    - errcheck
