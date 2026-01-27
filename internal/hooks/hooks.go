@@ -8,6 +8,12 @@ import (
 	"os/exec"
 )
 
+// Logger interface for hook logging
+type Logger interface {
+	Info(format string, args ...interface{})
+	Error(format string, args ...interface{})
+}
+
 // Runner executes hook scripts
 type Runner struct {
 	PreBackup  string
@@ -17,6 +23,7 @@ type Runner struct {
 	DryRun     bool
 	Env        []string
 	Verbose    bool
+	Logger     Logger
 }
 
 // NewRunner creates a new hook runner
@@ -32,14 +39,30 @@ func (r *Runner) Run(path string, extraEnv []string) (string, error) {
 	}
 
 	// Check if hook exists
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		// Hook not configured, silently skip
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		// Hook file not found, silently skip (not configured)
 		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("cannot access hook %s: %w", path, err)
+	}
+
+	// Check if hook is executable
+	if info.Mode()&0111 == 0 {
+		return "", fmt.Errorf("hook %s exists but is not executable (chmod +x %s)", path, path)
 	}
 
 	// In dry-run mode, don't execute
 	if r.DryRun {
+		fmt.Printf("🪝 [DRY-RUN] Would execute hook: %s\n", path)
 		return "", nil
+	}
+
+	// Log hook execution
+	fmt.Printf("🪝 Executing hook: %s\n", path)
+	if r.Logger != nil {
+		r.Logger.Info("Executing hook: %s", path)
 	}
 
 	// Prepare command
@@ -53,16 +76,24 @@ func (r *Runner) Run(path string, extraEnv []string) (string, error) {
 	cmd.Stderr = &stderr
 
 	// Execute
-	err := cmd.Run()
+	runErr := cmd.Run()
 	output := stdout.String()
 	if stderr.Len() > 0 {
 		output += stderr.String()
 	}
 
-	if err != nil {
-		return output, fmt.Errorf("hook %s failed: %w\nOutput: %s", path, err, output)
+	if runErr != nil {
+		fmt.Printf("❌ Hook failed: %s\n", path)
+		if r.Logger != nil {
+			r.Logger.Error("Hook failed: %s - %v", path, runErr)
+		}
+		return output, fmt.Errorf("hook %s failed: %w\nOutput: %s", path, runErr, output)
 	}
 
+	fmt.Printf("✅ Hook completed: %s\n", path)
+	if r.Logger != nil {
+		r.Logger.Info("Hook completed: %s", path)
+	}
 	return output, nil
 }
 

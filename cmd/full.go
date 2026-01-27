@@ -75,6 +75,7 @@ func runFull(cmd *cobra.Command) error {
 	hookRunner.OnSuccess = cfg.Hooks.OnSuccess
 	hookRunner.DryRun = IsDryRun()
 	hookRunner.Verbose = IsVerbose()
+	hookRunner.Logger = GetLogger()
 
 	var errors []error
 	separator := strings.Repeat("━", 50)

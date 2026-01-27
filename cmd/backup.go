@@ -107,6 +107,7 @@ func runBackup(cmd *cobra.Command) error {
 	hookRunner.OnSuccess = cfg.Hooks.OnSuccess
 	hookRunner.DryRun = IsDryRun()
 	hookRunner.Verbose = IsVerbose()
+	hookRunner.Logger = GetLogger()
 
 	// Run pre-backup hook
 	if err := hookRunner.RunPreBackup(); err != nil {

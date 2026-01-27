@@ -299,6 +299,7 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 	hookRunner.OnSuccess = cfg.Hooks.OnSuccess
 	hookRunner.DryRun = IsDryRun()
 	hookRunner.Verbose = IsVerbose()
+	hookRunner.Logger = logger
 
 	// Banner
 	fmt.Println()
@@ -333,17 +334,11 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 
 			if err := executor.Backup(backupOpts); err != nil {
 				PrintError("Backup failed: %v", err)
-				if logger != nil {
-					logger.Error("Backup failed: %v", err)
-				}
 				errors = append(errors, err)
 				_ = hookRunner.RunPostBackup(false, err)
 				_ = hookRunner.RunOnError(err)
 			} else {
 				PrintSuccess("Backup completed")
-				if logger != nil {
-					logger.Info("Backup completed successfully")
-				}
 				_ = hookRunner.RunPostBackup(true, nil)
 			}
 		}
@@ -367,15 +362,9 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 
 		if err := executor.Forget(forgetOpts); err != nil {
 			PrintError("Forget failed: %v", err)
-			if logger != nil {
-				logger.Error("Forget failed: %v", err)
-			}
 			errors = append(errors, err)
 		} else {
 			PrintSuccess("Forget completed")
-			if logger != nil {
-				logger.Info("Forget completed successfully")
-			}
 		}
 	}
 
@@ -387,15 +376,9 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 
 		if err := executor.Prune(); err != nil {
 			PrintError("Prune failed: %v", err)
-			if logger != nil {
-				logger.Error("Prune failed: %v", err)
-			}
 			errors = append(errors, err)
 		} else {
 			PrintSuccess("Prune completed")
-			if logger != nil {
-				logger.Info("Prune completed successfully")
-			}
 		}
 	}
 
@@ -408,15 +391,9 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 		checkOpts := restic.CheckOptions{ReadData: deep}
 		if err := executor.Check(checkOpts); err != nil {
 			PrintError("Check failed: %v", err)
-			if logger != nil {
-				logger.Error("Check failed: %v", err)
-			}
 			errors = append(errors, err)
 		} else {
 			PrintSuccess("Check passed")
-			if logger != nil {
-				logger.Info("Check completed successfully")
-			}
 		}
 	}
 
@@ -468,9 +445,6 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 
 			if err := destExecutor.Copy(copyOpts); err != nil {
 				PrintError("Copy to %s failed: %v", backendName, err)
-				if logger != nil {
-					logger.Error("Copy to %s failed: %v", backendName, err)
-				}
 				errors = append(errors, err)
 				fmt.Println("  └─ ❌ Skipping maintenance due to copy failure")
 				continue
@@ -490,9 +464,6 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 			}
 			if err := destExecutor.Forget(forgetOpts); err != nil {
 				PrintError("Forget on %s failed: %v", backendName, err)
-				if logger != nil {
-					logger.Error("Forget on %s failed: %v", backendName, err)
-				}
 				errors = append(errors, err)
 			} else {
 				PrintSuccess("Forget on %s completed", backendName)
@@ -503,9 +474,6 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 				fmt.Println("  │ 🧹 Pruning unused data...")
 				if err := destExecutor.Prune(); err != nil {
 					PrintError("Prune on %s failed: %v", backendName, err)
-					if logger != nil {
-						logger.Error("Prune on %s failed: %v", backendName, err)
-					}
 					errors = append(errors, err)
 				} else {
 					PrintSuccess("Prune on %s completed", backendName)
@@ -518,9 +486,6 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 				checkOpts := restic.CheckOptions{ReadData: deep}
 				if err := destExecutor.Check(checkOpts); err != nil {
 					PrintError("Check on %s failed: %v", backendName, err)
-					if logger != nil {
-						logger.Error("Check on %s failed: %v", backendName, err)
-					}
 					errors = append(errors, err)
 				} else {
 					PrintSuccess("Check on %s passed", backendName)
@@ -528,9 +493,6 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 			}
 
 			fmt.Println("  └─ ✅ Backend synchronized")
-			if logger != nil {
-				logger.Info("Copy to %s completed successfully", backendName)
-			}
 		}
 	}
 
@@ -538,9 +500,6 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 	fmt.Println("\n" + strings.Repeat("═", 50))
 	if len(errors) == 0 {
 		PrintSuccess("All operations completed successfully!")
-		if logger != nil {
-			logger.Info("Workflow completed successfully")
-		}
 		// Send success notification
 		notifier.NotifySuccess(
 			"✅ Backup Successful",
@@ -552,9 +511,6 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 		)
 	} else {
 		PrintError("%d operation(s) failed", len(errors))
-		if logger != nil {
-			logger.Error("Workflow completed with %d error(s)", len(errors))
-		}
 		// Send error notification
 		var errMsgs []string
 		for _, e := range errors {

@@ -3,6 +3,7 @@ package hooks
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -178,5 +179,33 @@ func TestNewRunner(t *testing.T) {
 	runner := NewRunner()
 	if runner == nil {
 		t.Error("NewRunner() returned nil")
+	}
+}
+
+func TestRunHookNotExecutable(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a hook script without execute permission
+	hookPath := filepath.Join(tmpDir, "not-executable.sh")
+	hookContent := `#!/bin/bash
+echo "This should not run"
+`
+	// Write with 0644 (no execute permission)
+	if err := os.WriteFile(hookPath, []byte(hookContent), 0644); err != nil {
+		t.Fatalf("Failed to write hook script: %v", err)
+	}
+
+	runner := &Runner{
+		DryRun: false,
+	}
+
+	_, err := runner.Run(hookPath, nil)
+	if err == nil {
+		t.Error("Expected error for non-executable hook")
+	}
+
+	// Check that error message mentions chmod
+	if err != nil && !strings.Contains(err.Error(), "not executable") {
+		t.Errorf("Expected error to mention 'not executable', got: %v", err)
 	}
 }
