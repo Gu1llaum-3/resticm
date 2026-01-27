@@ -31,6 +31,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get previous tag
+        id: prev_tag
+        run: |
+          # Get the previous tag (second in the list)
+          PREV_TAG=$(git tag --sort=-version:refname | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            # If no previous tag exists, use the first commit
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+          echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          echo "Previous tag: $PREV_TAG"
+
       - name: Update release notes
         uses: softprops/action-gh-release@v1
         with:
@@ -84,7 +96,7 @@ jobs:
 
             ## Full Changelog
 
-            See all changes at https://github.com/Gu1llaum-3/resticm/compare/${{ github.event.before }}...${{ github.ref_name }}
+            See all changes at https://github.com/Gu1llaum-3/resticm/compare/${{ steps.prev_tag.outputs.prev_tag }}...${{ github.ref_name }}
 
             ---
 
