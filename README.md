@@ -252,6 +252,37 @@ resticm run restore latest --target /tmp/restore
 resticm run mount /mnt/restic
 ```
 
+### Export Environment Variables
+
+Use `resticm env` to export restic environment variables for direct `restic` CLI usage:
+
+```bash
+# Export variables using active backend
+eval $(resticm env)
+restic snapshots
+
+# Use specific backend temporarily
+eval $(resticm env --backend s3-backup)
+restic check
+
+# Export to file for later use
+resticm env > ~/.resticm.env
+source ~/.resticm.env
+restic snapshots
+
+# Fish shell
+resticm env --format fish | source
+
+# PowerShell
+resticm env --format powershell | Invoke-Expression
+```
+
+Exported variables:
+- `RESTIC_REPOSITORY` - Repository URL
+- `RESTIC_PASSWORD` - Repository password
+- `AWS_ACCESS_KEY_ID` - AWS access key (if configured)
+- `AWS_SECRET_ACCESS_KEY` - AWS secret key (if configured)
+
 ### Global Flags
 
 ```bash
