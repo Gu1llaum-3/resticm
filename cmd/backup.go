@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"resticm/internal/config"
+	"resticm/internal/hooks"
 	"resticm/internal/restic"
 	"resticm/internal/security"
 )
@@ -98,6 +99,31 @@ func runBackup(cmd *cobra.Command) error {
 	notifySuccess, _ := cmd.Flags().GetBool("notify-success")
 	notifier := GetNotifier(notifySuccess)
 
+	// Setup hooks
+	hookRunner := hooks.NewRunner()
+	hookRunner.PreBackup = cfg.Hooks.PreBackup
+	hookRunner.PostBackup = cfg.Hooks.PostBackup
+	hookRunner.OnError = cfg.Hooks.OnError
+	hookRunner.OnSuccess = cfg.Hooks.OnSuccess
+	hookRunner.DryRun = IsDryRun()
+	hookRunner.Verbose = IsVerbose()
+
+	// Run pre-backup hook
+	if err := hookRunner.RunPreBackup(); err != nil {
+		PrintError("Pre-backup hook failed: %v", err)
+		_ = hookRunner.RunOnError(err)
+		_ = notifier.NotifyError(
+			"❌ Pre-Backup Hook Failed",
+			fmt.Sprintf("resticm pre-backup hook failed on %s: %v", hostname, err),
+			err,
+			map[string]string{
+				"host":       hostname,
+				"repository": repo,
+			},
+		)
+		return err
+	}
+
 	PrintInfo("Starting backup...")
 
 	opts := restic.BackupOptions{
@@ -110,6 +136,8 @@ func runBackup(cmd *cobra.Command) error {
 
 	if err := executor.Backup(opts); err != nil {
 		PrintError("Backup failed: %v", err)
+		_ = hookRunner.RunPostBackup(false, err)
+		_ = hookRunner.RunOnError(err)
 		_ = notifier.NotifyError(
 			"❌ Backup Failed",
 			fmt.Sprintf("resticm backup failed on %s: %v", hostname, err),
@@ -122,7 +150,14 @@ func runBackup(cmd *cobra.Command) error {
 		return err
 	}
 
+	// Run post-backup hook
+	if err := hookRunner.RunPostBackup(true, nil); err != nil {
+		PrintError("Post-backup hook failed: %v", err)
+		// Don't fail the backup if post-hook fails, but log it
+	}
+
 	PrintSuccess("Backup completed successfully")
+	_ = hookRunner.RunOnSuccess()
 	_ = notifier.NotifySuccess(
 		"✅ Backup Completed",
 		fmt.Sprintf("resticm backup completed successfully on %s", hostname),

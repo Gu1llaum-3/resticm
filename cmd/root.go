@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"resticm/internal/config"
+	"resticm/internal/hooks"
 	"resticm/internal/logging"
 	"resticm/internal/notify"
 	"resticm/internal/restic"
@@ -290,6 +291,15 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 	var errors []error
 	separator := strings.Repeat("━", 50)
 
+	// Setup hooks
+	hookRunner := hooks.NewRunner()
+	hookRunner.PreBackup = cfg.Hooks.PreBackup
+	hookRunner.PostBackup = cfg.Hooks.PostBackup
+	hookRunner.OnError = cfg.Hooks.OnError
+	hookRunner.OnSuccess = cfg.Hooks.OnSuccess
+	hookRunner.DryRun = IsDryRun()
+	hookRunner.Verbose = IsVerbose()
+
 	// Banner
 	fmt.Println()
 	fmt.Println("═══════════════════════════════════════════════════")
@@ -302,29 +312,39 @@ func runDefaultWorkflow(cmd *cobra.Command) error {
 		fmt.Println("📦 BACKUP")
 		fmt.Println(separator)
 
-		tags := cfg.DefaultTags
-		if extraTag != "" {
-			tags = append(tags, extraTag)
-		}
-
-		backupOpts := restic.BackupOptions{
-			Directories:     cfg.Directories,
-			Tags:            tags,
-			ExcludePatterns: cfg.ExcludePatterns,
-			ExcludeFile:     cfg.ExcludeFile,
-			Hostname:        hostname,
-		}
-
-		if err := executor.Backup(backupOpts); err != nil {
-			PrintError("Backup failed: %v", err)
-			if logger != nil {
-				logger.Error("Backup failed: %v", err)
-			}
+		// Run pre-backup hook
+		if err := hookRunner.RunPreBackup(); err != nil {
+			PrintError("Pre-backup hook failed: %v", err)
 			errors = append(errors, err)
+			_ = hookRunner.RunOnError(err)
 		} else {
-			PrintSuccess("Backup completed")
-			if logger != nil {
-				logger.Info("Backup completed successfully")
+			tags := cfg.DefaultTags
+			if extraTag != "" {
+				tags = append(tags, extraTag)
+			}
+
+			backupOpts := restic.BackupOptions{
+				Directories:     cfg.Directories,
+				Tags:            tags,
+				ExcludePatterns: cfg.ExcludePatterns,
+				ExcludeFile:     cfg.ExcludeFile,
+				Hostname:        hostname,
+			}
+
+			if err := executor.Backup(backupOpts); err != nil {
+				PrintError("Backup failed: %v", err)
+				if logger != nil {
+					logger.Error("Backup failed: %v", err)
+				}
+				errors = append(errors, err)
+				_ = hookRunner.RunPostBackup(false, err)
+				_ = hookRunner.RunOnError(err)
+			} else {
+				PrintSuccess("Backup completed")
+				if logger != nil {
+					logger.Info("Backup completed successfully")
+				}
+				_ = hookRunner.RunPostBackup(true, nil)
 			}
 		}
 	}
