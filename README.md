@@ -408,6 +408,8 @@ copy_to_backends:
 
 #### Notifications
 
+Send real-time alerts about backup operations via multiple providers (Slack, Discord, ntfy, Google Chat, Uptime Kuma, webhooks).
+
 ```yaml
 notifications:
   enabled: true
@@ -441,6 +443,8 @@ notifications:
     - type: webhook
       url: "https://example.com/api/webhook"
 ```
+
+📖 **[Complete Notifications Documentation →](docs/notifications.md)**
 
 #### Hooks
 
@@ -547,6 +551,8 @@ hooks:
   pre_backup: "/etc/resticm/hooks/pre-backup.sh"
   post_backup: "/etc/resticm/hooks/post-backup.sh"
 ```
+
+📖 **[Complete Hooks Documentation →](docs/hooks.md)**
 
 This ensures:
 1. Database is dumped **before** backup starts
