@@ -36,6 +36,7 @@ func init() {
 	fullCmd.Flags().StringP("tag", "t", "", "Add extra tag to backup")
 	fullCmd.Flags().Bool("deep", false, "Force deep check on all backends")
 	fullCmd.Flags().Bool("all-hosts", false, "Process snapshots from all hosts")
+	fullCmd.Flags().Bool("no-hooks", false, "Skip all hooks (pre-backup, post-backup, on-error, on-success)")
 }
 
 func runFull(cmd *cobra.Command) error {
@@ -54,6 +55,11 @@ func runFull(cmd *cobra.Command) error {
 	extraTag, _ := cmd.Flags().GetString("tag")
 	deep, _ := cmd.Flags().GetBool("deep")
 	allHosts, _ := cmd.Flags().GetBool("all-hosts")
+	noHooks, _ := cmd.Flags().GetBool("no-hooks")
+
+	if noHooks {
+		PrintInfo("Skipping all hooks (--no-hooks flag set)")
+	}
 
 	repo := cfg.Repository
 	password := cfg.GetPassword()
@@ -68,14 +74,17 @@ func runFull(cmd *cobra.Command) error {
 	hostname, _ := os.Hostname()
 
 	// Setup hooks
-	hookRunner := hooks.NewRunner()
-	hookRunner.PreBackup = cfg.Hooks.PreBackup
-	hookRunner.PostBackup = cfg.Hooks.PostBackup
-	hookRunner.OnError = cfg.Hooks.OnError
-	hookRunner.OnSuccess = cfg.Hooks.OnSuccess
-	hookRunner.DryRun = IsDryRun()
-	hookRunner.Verbose = IsVerbose()
-	hookRunner.Logger = GetLogger()
+	var hookRunner *hooks.Runner
+	if !noHooks {
+		hookRunner = hooks.NewRunner()
+		hookRunner.PreBackup = cfg.Hooks.PreBackup
+		hookRunner.PostBackup = cfg.Hooks.PostBackup
+		hookRunner.OnError = cfg.Hooks.OnError
+		hookRunner.OnSuccess = cfg.Hooks.OnSuccess
+		hookRunner.DryRun = IsDryRun()
+		hookRunner.Verbose = IsVerbose()
+		hookRunner.Logger = GetLogger()
+	}
 
 	var errors []error
 	separator := strings.Repeat("━", 50)
@@ -83,7 +92,11 @@ func runFull(cmd *cobra.Command) error {
 	// Banner
 	fmt.Println()
 	fmt.Println("═══════════════════════════════════════════════════")
-	fmt.Println(" RESTICM FULL MAINTENANCE")
+	if IsDryRun() {
+		fmt.Println(" RESTICM FULL MAINTENANCE (DRY RUN)")
+	} else {
+		fmt.Println(" RESTICM FULL MAINTENANCE")
+	}
 	fmt.Println("═══════════════════════════════════════════════════")
 
 	// 1. BACKUP
@@ -92,20 +105,22 @@ func runFull(cmd *cobra.Command) error {
 	fmt.Println(separator)
 
 	// Run pre-backup hook
-	if err := hookRunner.RunPreBackup(); err != nil {
-		PrintError("Pre-backup hook failed: %v", err)
-		errors = append(errors, err)
-		_ = hookRunner.RunOnError(err)
-		_ = GetNotifier(false).NotifyError(
-			"❌ Pre-Backup Hook Failed",
-			fmt.Sprintf("resticm pre-backup hook failed on %s: %v", hostname, err),
-			err,
-			map[string]string{
-				"host":       hostname,
-				"repository": cfg.Repository,
-			},
-		)
-		return err
+	if !noHooks && hookRunner != nil {
+		if err := hookRunner.RunPreBackup(); err != nil {
+			PrintError("Pre-backup hook failed: %v", err)
+			errors = append(errors, err)
+			_ = hookRunner.RunOnError(err)
+			_ = GetNotifier(false).NotifyError(
+				"❌ Pre-Backup Hook Failed",
+				fmt.Sprintf("resticm pre-backup hook failed on %s: %v", hostname, err),
+				err,
+				map[string]string{
+					"host":       hostname,
+					"repository": cfg.Repository,
+				},
+			)
+			return err
+		}
 	}
 
 	tags := cfg.DefaultTags
@@ -124,11 +139,15 @@ func runFull(cmd *cobra.Command) error {
 	if err := executor.Backup(backupOpts); err != nil {
 		PrintError("Backup failed: %v", err)
 		errors = append(errors, err)
-		_ = hookRunner.RunPostBackup(false, err)
-		_ = hookRunner.RunOnError(err)
+		if !noHooks && hookRunner != nil {
+			_ = hookRunner.RunPostBackup(false, err)
+			_ = hookRunner.RunOnError(err)
+		}
 	} else {
 		PrintSuccess("Backup completed")
-		_ = hookRunner.RunPostBackup(true, nil)
+		if !noHooks && hookRunner != nil {
+			_ = hookRunner.RunPostBackup(true, nil)
+		}
 	}
 
 	// 2. FORGET
@@ -293,7 +312,9 @@ func runFull(cmd *cobra.Command) error {
 
 	if len(errors) == 0 {
 		PrintSuccess("All operations completed successfully!")
-		_ = hookRunner.RunOnSuccess()
+		if !noHooks && hookRunner != nil {
+			_ = hookRunner.RunOnSuccess()
+		}
 		_ = notifier.NotifySuccess(
 			"✅ Full Maintenance Completed",
 			fmt.Sprintf("resticm full completed successfully on %s", hostname),
@@ -310,7 +331,9 @@ func runFull(cmd *cobra.Command) error {
 			errMsgs = append(errMsgs, e.Error())
 		}
 		finalErr := fmt.Errorf("%d operation(s) failed", len(errors))
-		_ = hookRunner.RunOnError(finalErr)
+		if !noHooks && hookRunner != nil {
+			_ = hookRunner.RunOnError(finalErr)
+		}
 		_ = notifier.NotifyError(
 			"❌ Full Maintenance Failed",
 			fmt.Sprintf("resticm full failed on %s with %d error(s)", hostname, len(errors)),

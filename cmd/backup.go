@@ -32,6 +32,7 @@ func init() {
 	rootCmd.AddCommand(backupCmd)
 	backupCmd.Flags().StringP("tag", "t", "", "Add extra tag to backup")
 	backupCmd.Flags().Bool("notify-success", false, "Send notification on success")
+	backupCmd.Flags().Bool("no-hooks", false, "Skip all hooks (pre-backup, post-backup, on-error, on-success)")
 }
 
 func runBackup(cmd *cobra.Command) error {
@@ -99,33 +100,48 @@ func runBackup(cmd *cobra.Command) error {
 	notifySuccess, _ := cmd.Flags().GetBool("notify-success")
 	notifier := GetNotifier(notifySuccess)
 
-	// Setup hooks
-	hookRunner := hooks.NewRunner()
-	hookRunner.PreBackup = cfg.Hooks.PreBackup
-	hookRunner.PostBackup = cfg.Hooks.PostBackup
-	hookRunner.OnError = cfg.Hooks.OnError
-	hookRunner.OnSuccess = cfg.Hooks.OnSuccess
-	hookRunner.DryRun = IsDryRun()
-	hookRunner.Verbose = IsVerbose()
-	hookRunner.Logger = GetLogger()
-
-	// Run pre-backup hook
-	if err := hookRunner.RunPreBackup(); err != nil {
-		PrintError("Pre-backup hook failed: %v", err)
-		_ = hookRunner.RunOnError(err)
-		_ = notifier.NotifyError(
-			"❌ Pre-Backup Hook Failed",
-			fmt.Sprintf("resticm pre-backup hook failed on %s: %v", hostname, err),
-			err,
-			map[string]string{
-				"host":       hostname,
-				"repository": repo,
-			},
-		)
-		return err
+	// Check if hooks should be skipped
+	noHooks, _ := cmd.Flags().GetBool("no-hooks")
+	if noHooks {
+		PrintInfo("Skipping all hooks (--no-hooks flag set)")
 	}
 
-	PrintInfo("Starting backup...")
+	// Setup hooks
+	var hookRunner *hooks.Runner
+	if !noHooks {
+		hookRunner = hooks.NewRunner()
+		hookRunner.PreBackup = cfg.Hooks.PreBackup
+		hookRunner.PostBackup = cfg.Hooks.PostBackup
+		hookRunner.OnError = cfg.Hooks.OnError
+		hookRunner.OnSuccess = cfg.Hooks.OnSuccess
+		hookRunner.DryRun = IsDryRun()
+		hookRunner.Verbose = IsVerbose()
+		hookRunner.Logger = GetLogger()
+	}
+
+	// Run pre-backup hook
+	if !noHooks && hookRunner != nil {
+		if err := hookRunner.RunPreBackup(); err != nil {
+			PrintError("Pre-backup hook failed: %v", err)
+			_ = hookRunner.RunOnError(err)
+			_ = notifier.NotifyError(
+				"❌ Pre-Backup Hook Failed",
+				fmt.Sprintf("resticm pre-backup hook failed on %s: %v", hostname, err),
+				err,
+				map[string]string{
+					"host":       hostname,
+					"repository": repo,
+				},
+			)
+			return err
+		}
+	}
+
+	if IsDryRun() {
+		PrintInfo("Starting backup (DRY RUN - no changes will be made)...")
+	} else {
+		PrintInfo("Starting backup...")
+	}
 
 	opts := restic.BackupOptions{
 		Directories:     cfg.Directories,
@@ -137,8 +153,10 @@ func runBackup(cmd *cobra.Command) error {
 
 	if err := executor.Backup(opts); err != nil {
 		PrintError("Backup failed: %v", err)
-		_ = hookRunner.RunPostBackup(false, err)
-		_ = hookRunner.RunOnError(err)
+		if !noHooks && hookRunner != nil {
+			_ = hookRunner.RunPostBackup(false, err)
+			_ = hookRunner.RunOnError(err)
+		}
 		_ = notifier.NotifyError(
 			"❌ Backup Failed",
 			fmt.Sprintf("resticm backup failed on %s: %v", hostname, err),
@@ -152,13 +170,17 @@ func runBackup(cmd *cobra.Command) error {
 	}
 
 	// Run post-backup hook
-	if err := hookRunner.RunPostBackup(true, nil); err != nil {
-		PrintError("Post-backup hook failed: %v", err)
-		// Don't fail the backup if post-hook fails, but log it
+	if !noHooks && hookRunner != nil {
+		if err := hookRunner.RunPostBackup(true, nil); err != nil {
+			PrintError("Post-backup hook failed: %v", err)
+			// Don't fail the backup if post-hook fails, but log it
+		}
 	}
 
 	PrintSuccess("Backup completed successfully")
-	_ = hookRunner.RunOnSuccess()
+	if !noHooks && hookRunner != nil {
+		_ = hookRunner.RunOnSuccess()
+	}
 	_ = notifier.NotifySuccess(
 		"✅ Backup Completed",
 		fmt.Sprintf("resticm backup completed successfully on %s", hostname),
