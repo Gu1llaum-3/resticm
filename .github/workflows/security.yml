@@ -1,0 +1,103 @@
+name: Security Scan
+
+on:
+  # Run weekly every Monday at 9am UTC
+  schedule:
+    - cron: '0 9 * * 1'
+  # Allow manual execution from GitHub interface
+  workflow_dispatch:
+  # Run on pull requests to check new dependencies
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  security-events: write
+  issues: write
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck on source code
+        id: vulncheck-source
+        continue-on-error: true
+        run: |
+          govulncheck -json ./... > vulns-source.json 2>&1 || true
+          govulncheck ./... > vulns-source.txt 2>&1 || echo "vulnerabilities_found_source=true" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        run: make build || go build -o resticm
+
+      - name: Check binary for vulnerabilities
+        id: vulncheck-binary
+        continue-on-error: true
+        run: |
+          govulncheck -mode binary resticm > vulns-binary.txt 2>&1 || echo "vulnerabilities_found_binary=true" >> $GITHUB_OUTPUT
+
+      - name: Create issue if vulnerabilities found
+        if: steps.vulncheck-source.outputs.vulnerabilities_found_source == 'true' || steps.vulncheck-binary.outputs.vulnerabilities_found_binary == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let sourceVulns = '';
+            let binaryVulns = '';
+            
+            try {
+              sourceVulns = fs.readFileSync('vulns-source.txt', 'utf8');
+            } catch (e) {
+              sourceVulns = 'No output available';
+            }
+            
+            try {
+              binaryVulns = fs.readFileSync('vulns-binary.txt', 'utf8');
+            } catch (e) {
+              binaryVulns = 'No output available';
+            }
+            
+            const issueBody = `## 🔒 Security Vulnerabilities Detected
+            
+            **Workflow Run:** [${context.runNumber}](${context.payload.repository.html_url}/actions/runs/${context.runId})
+            **Branch:** ${context.ref}
+            **Triggered by:** ${context.eventName}
+            
+            ### Source Code Scan
+            \`\`\`
+            ${sourceVulns.substring(0, 5000)}
+            \`\`\`
+            
+            ### Binary Scan
+            \`\`\`
+            ${binaryVulns.substring(0, 5000)}
+            \`\`\`
+            
+            ---
+            *This issue was automatically created by the security scan workflow.*`;
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔒 Security vulnerabilities detected - ${new Date().toISOString().split('T')[0]}`,
+              labels: ['security', 'vulnerability', 'govulncheck'],
+              body: issueBody
+            });
+
+      - name: Fail workflow if vulnerabilities found
+        if: steps.vulncheck-source.outputs.vulnerabilities_found_source == 'true' || steps.vulncheck-binary.outputs.vulnerabilities_found_binary == 'true'
+        run: |
+          echo "❌ Vulnerabilities detected! Check the created issue for details."
+          exit 1
