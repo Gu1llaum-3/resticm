@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -557,6 +558,88 @@ func GetNotifier(notifySuccess bool) *notify.Notifier {
 		NotifyOnError:   cfg.Notifications.NotifyOnError,
 		Providers:       convertProviders(cfg.Notifications.Providers),
 	})
+}
+
+// LogCommandStart logs the command execution start with full context
+func LogCommandStart(cmd *cobra.Command, extraFlags map[string]interface{}) {
+	if logger == nil {
+		return
+	}
+
+	// Build command string
+	cmdPath := cmd.CommandPath()
+
+	// Log command with context
+	logger.Info("Command started: %s", cmdPath)
+
+	// Log hostname
+	hostname, _ := os.Hostname()
+	logger.Info("Hostname: %s", hostname)
+
+	// Log user
+	user := "root"
+	if !config.IsRoot() {
+		user = os.Getenv("USER")
+		if user == "" {
+			user = "non-root"
+		}
+	}
+	logger.Info("User: %s", user)
+
+	// Log active backend
+	activeBackend, _ := config.GetActiveBackend()
+	if activeBackend == "" {
+		activeBackend = "primary"
+	}
+	logger.Info("Backend: %s", activeBackend)
+
+	// Log config file
+	configPath := config.GetLoadedConfigPath()
+	if configPath != "" {
+		logger.Info("Config: %s", configPath)
+	}
+
+	// Log global flags if set
+	flags := make(map[string]interface{})
+	if verbose {
+		flags["verbose"] = true
+	}
+	if dryRun {
+		flags["dry-run"] = true
+	}
+	if jsonOutput {
+		flags["json"] = true
+	}
+
+	// Add extra flags
+	for k, v := range extraFlags {
+		flags[k] = v
+	}
+
+	// Log flags if any
+	if len(flags) > 0 {
+		flagStrs := []string{}
+		for k, v := range flags {
+			flagStrs = append(flagStrs, fmt.Sprintf("%s=%v", k, v))
+		}
+		logger.Info("Flags: %s", strings.Join(flagStrs, ", "))
+	}
+}
+
+// LogCommandEnd logs the command execution end with duration
+func LogCommandEnd(cmd *cobra.Command, startTime time.Time, err error) {
+	if logger == nil {
+		return
+	}
+
+	cmdPath := cmd.CommandPath()
+	duration := time.Since(startTime)
+
+	if err != nil {
+		logger.Error("Command failed: %s (duration: %s, error: %v)", cmdPath, duration.Round(time.Second), err)
+	} else {
+		logger.Info("Command completed: %s (duration: %s)", cmdPath, duration.Round(time.Second))
+	}
 }
 
 // needsRootForFullAccess returns true if the command benefits from root privileges

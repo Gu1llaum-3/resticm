@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -24,7 +26,9 @@ func init() {
 	copyCmd.Flags().StringSlice("to", nil, "Specific backends to copy to")
 }
 
-func runCopy(cmd *cobra.Command) error {
+func runCopy(cmd *cobra.Command) (err error) {
+	startTime := time.Now()
+
 	cfg := GetConfig()
 	if cfg == nil {
 		return fmt.Errorf("configuration not loaded")
@@ -35,15 +39,34 @@ func runCopy(cmd *cobra.Command) error {
 		return nil
 	}
 
+	allHosts, _ := cmd.Flags().GetBool("all")
+	toBackends, _ := cmd.Flags().GetStringSlice("to")
+
+	// Build flag map for logging
+	flagMap := make(map[string]interface{})
+	if allHosts {
+		flagMap["all"] = true
+	}
+	if len(toBackends) > 0 {
+		flagMap["to"] = strings.Join(toBackends, ",")
+	}
+
+	// Log command start with context
+	LogCommandStart(cmd, flagMap)
+
+	// Ensure we log command end
+	defer func() {
+		LogCommandEnd(cmd, startTime, err)
+	}()
+
 	// Acquire lock
 	lock := security.NewLock("")
-	if err := lock.Acquire(); err != nil {
+	if err = lock.Acquire(); err != nil {
 		return err
 	}
 	defer func() { _ = lock.Release() }()
 
 	// Determine which backends to copy to
-	toBackends, _ := cmd.Flags().GetStringSlice("to")
 	if len(toBackends) == 0 {
 		toBackends = cfg.CopyToBackends
 	}
@@ -57,7 +80,6 @@ func runCopy(cmd *cobra.Command) error {
 
 	// Determine hostname filter
 	hostname := ""
-	allHosts, _ := cmd.Flags().GetBool("all")
 	if !allHosts {
 		hostname, _ = os.Hostname()
 	}

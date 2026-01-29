@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -39,23 +40,48 @@ func init() {
 	checkCmd.Flags().Bool("primary-only", false, "Only apply to primary repository (skip copy backends)")
 }
 
-func runCheck(cmd *cobra.Command) error {
+func runCheck(cmd *cobra.Command) (err error) {
+	startTime := time.Now()
+
 	cfg := GetConfig()
 	if cfg == nil {
 		return fmt.Errorf("configuration not loaded")
 	}
 
-	// Acquire lock
-	lock := security.NewLock("")
-	if err := lock.Acquire(); err != nil {
-		return err
-	}
-	defer func() { _ = lock.Release() }()
-
 	deep, _ := cmd.Flags().GetBool("deep")
 	auto, _ := cmd.Flags().GetBool("auto")
 	subset, _ := cmd.Flags().GetString("subset")
 	primaryOnly, _ := cmd.Flags().GetBool("primary-only")
+
+	// Build flag map for logging
+	flagMap := make(map[string]interface{})
+	if deep {
+		flagMap["deep"] = true
+	}
+	if auto {
+		flagMap["auto"] = true
+	}
+	if subset != "" {
+		flagMap["subset"] = subset
+	}
+	if primaryOnly {
+		flagMap["primary-only"] = true
+	}
+
+	// Log command start with context
+	LogCommandStart(cmd, flagMap)
+
+	// Ensure we log command end
+	defer func() {
+		LogCommandEnd(cmd, startTime, err)
+	}()
+
+	// Acquire lock
+	lock := security.NewLock("")
+	if err = lock.Acquire(); err != nil {
+		return err
+	}
+	defer func() { _ = lock.Release() }()
 
 	// Get notifier for error notifications (check failures are CRITICAL)
 	notifier := GetNotifier(false)
@@ -106,7 +132,6 @@ func runCheck(cmd *cobra.Command) error {
 			}
 
 			fmt.Println()
-			PrintInfo("🔍 Running check on backend: %s", backendName)
 			if err := checkOnBackend(backendName, backend.Repository, backend.Password,
 				backend.AWSAccessKeyID, backend.AWSSecretAccessKey, deep, auto, subset, cfg.DeepCheckIntervalDays); err != nil {
 				PrintError("Check failed on backend '%s': %v", backendName, err)

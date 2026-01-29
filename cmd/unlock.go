@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -32,10 +33,32 @@ func init() {
 	unlockCmd.Flags().Bool("restic", false, "Also unlock restic repository locks")
 }
 
-func runUnlock(cmd *cobra.Command) error {
+func runUnlock(cmd *cobra.Command) (err error) {
+	startTime := time.Now()
+
 	force, _ := cmd.Flags().GetBool("force")
 	allBackends, _ := cmd.Flags().GetBool("all-backends")
 	unlockRestic, _ := cmd.Flags().GetBool("restic")
+
+	// Build flag map for logging
+	flagMap := make(map[string]interface{})
+	if force {
+		flagMap["force"] = true
+	}
+	if allBackends {
+		flagMap["all-backends"] = true
+	}
+	if unlockRestic {
+		flagMap["restic"] = true
+	}
+
+	// Log command start with context
+	LogCommandStart(cmd, flagMap)
+
+	// Ensure we log command end
+	defer func() {
+		LogCommandEnd(cmd, startTime, err)
+	}()
 
 	// Handle resticm lock file
 	lock := security.NewLock("")

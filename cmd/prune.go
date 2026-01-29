@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -30,20 +31,36 @@ func init() {
 	pruneCmd.Flags().Bool("primary-only", false, "Only apply to primary repository (skip copy backends)")
 }
 
-func runPrune(cmd *cobra.Command) error {
+func runPrune(cmd *cobra.Command) (err error) {
+	startTime := time.Now()
+
 	cfg := GetConfig()
 	if cfg == nil {
 		return fmt.Errorf("configuration not loaded")
 	}
 
+	primaryOnly, _ := cmd.Flags().GetBool("primary-only")
+
+	// Build flag map for logging
+	flagMap := make(map[string]interface{})
+	if primaryOnly {
+		flagMap["primary-only"] = true
+	}
+
+	// Log command start with context
+	LogCommandStart(cmd, flagMap)
+
+	// Ensure we log command end
+	defer func() {
+		LogCommandEnd(cmd, startTime, err)
+	}()
+
 	// Acquire lock
 	lock := security.NewLock("")
-	if err := lock.Acquire(); err != nil {
+	if err = lock.Acquire(); err != nil {
 		return err
 	}
 	defer func() { _ = lock.Release() }()
-
-	primaryOnly, _ := cmd.Flags().GetBool("primary-only")
 
 	// Get notifier for error notifications
 	notifier := GetNotifier(false)

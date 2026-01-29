@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -30,7 +31,9 @@ func init() {
 	initCmd.Flags().Bool("all", false, "Initialize all configured backends")
 }
 
-func runInit(cmd *cobra.Command) error {
+func runInit(cmd *cobra.Command) (err error) {
+	startTime := time.Now()
+
 	cfg := GetConfig()
 	if cfg == nil {
 		return fmt.Errorf("configuration not loaded")
@@ -38,6 +41,23 @@ func runInit(cmd *cobra.Command) error {
 
 	backendName, _ := cmd.Flags().GetString("backend")
 	initAll, _ := cmd.Flags().GetBool("all")
+
+	// Build flag map for logging
+	flagMap := make(map[string]interface{})
+	if backendName != "" {
+		flagMap["backend"] = backendName
+	}
+	if initAll {
+		flagMap["all"] = true
+	}
+
+	// Log command start with context
+	LogCommandStart(cmd, flagMap)
+
+	// Ensure we log command end
+	defer func() {
+		LogCommandEnd(cmd, startTime, err)
+	}()
 
 	if backendName != "" {
 		return initBackend(cfg, backendName)

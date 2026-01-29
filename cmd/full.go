@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -39,23 +40,48 @@ func init() {
 	fullCmd.Flags().Bool("no-hooks", false, "Skip all hooks (pre-backup, post-backup, on-error, on-success)")
 }
 
-func runFull(cmd *cobra.Command) error {
+func runFull(cmd *cobra.Command) (err error) {
+	startTime := time.Now()
+
 	cfg := GetConfig()
 	if cfg == nil {
 		return fmt.Errorf("configuration not loaded")
 	}
 
-	// Acquire lock
-	lock := security.NewLock("")
-	if err := lock.Acquire(); err != nil {
-		return err
-	}
-	defer func() { _ = lock.Release() }()
-
 	extraTag, _ := cmd.Flags().GetString("tag")
 	deep, _ := cmd.Flags().GetBool("deep")
 	allHosts, _ := cmd.Flags().GetBool("all-hosts")
 	noHooks, _ := cmd.Flags().GetBool("no-hooks")
+
+	// Build flag map for logging
+	flagMap := make(map[string]interface{})
+	if extraTag != "" {
+		flagMap["tag"] = extraTag
+	}
+	if deep {
+		flagMap["deep"] = true
+	}
+	if allHosts {
+		flagMap["all-hosts"] = true
+	}
+	if noHooks {
+		flagMap["no-hooks"] = true
+	}
+
+	// Log command start with context
+	LogCommandStart(cmd, flagMap)
+
+	// Ensure we log command end
+	defer func() {
+		LogCommandEnd(cmd, startTime, err)
+	}()
+
+	// Acquire lock
+	lock := security.NewLock("")
+	if err = lock.Acquire(); err != nil {
+		return err
+	}
+	defer func() { _ = lock.Release() }()
 
 	if noHooks {
 		PrintInfo("Skipping all hooks (--no-hooks flag set)")

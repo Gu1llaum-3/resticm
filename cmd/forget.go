@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -32,28 +33,50 @@ func init() {
 	forgetCmd.Flags().Bool("primary-only", false, "Only apply to primary repository (skip copy backends)")
 }
 
-func runForget(cmd *cobra.Command) error {
+func runForget(cmd *cobra.Command) (err error) {
+	startTime := time.Now()
+
 	cfg := GetConfig()
 	if cfg == nil {
 		return fmt.Errorf("configuration not loaded")
 	}
 
+	allHosts, _ := cmd.Flags().GetBool("all-hosts")
+	prune, _ := cmd.Flags().GetBool("prune")
+	primaryOnly, _ := cmd.Flags().GetBool("primary-only")
+
+	// Build flag map for logging
+	flagMap := make(map[string]interface{})
+	if allHosts {
+		flagMap["all-hosts"] = true
+	}
+	if prune {
+		flagMap["prune"] = true
+	}
+	if primaryOnly {
+		flagMap["primary-only"] = true
+	}
+
+	// Log command start with context
+	LogCommandStart(cmd, flagMap)
+
+	// Ensure we log command end
+	defer func() {
+		LogCommandEnd(cmd, startTime, err)
+	}()
+
 	// Acquire lock
 	lock := security.NewLock("")
-	if err := lock.Acquire(); err != nil {
+	if err = lock.Acquire(); err != nil {
 		return err
 	}
 	defer func() { _ = lock.Release() }()
 
 	// Determine hostname filter
 	hostname := ""
-	allHosts, _ := cmd.Flags().GetBool("all-hosts")
 	if !allHosts {
 		hostname, _ = os.Hostname()
 	}
-
-	prune, _ := cmd.Flags().GetBool("prune")
-	primaryOnly, _ := cmd.Flags().GetBool("primary-only")
 
 	// Get notifier for error notifications
 	notifier := GetNotifier(false)

@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -27,13 +28,29 @@ func init() {
 	statsCmd.Flags().Bool("all-backends", false, "Show stats from all configured backends")
 }
 
-func runStats(cmd *cobra.Command) error {
+func runStats(cmd *cobra.Command) (err error) {
+	startTime := time.Now()
+
 	cfg := GetConfig()
 	if cfg == nil {
 		return fmt.Errorf("configuration not loaded")
 	}
 
 	allBackends, _ := cmd.Flags().GetBool("all-backends")
+
+	// Build flag map for logging
+	flagMap := make(map[string]interface{})
+	if allBackends {
+		flagMap["all-backends"] = true
+	}
+
+	// Log command start with context
+	LogCommandStart(cmd, flagMap)
+
+	// Ensure we log command end
+	defer func() {
+		LogCommandEnd(cmd, startTime, err)
+	}()
 
 	if allBackends {
 		return showStatsAllBackends(cfg)

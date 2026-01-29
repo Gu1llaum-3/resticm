@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -35,15 +36,42 @@ func init() {
 	backupCmd.Flags().Bool("no-hooks", false, "Skip all hooks (pre-backup, post-backup, on-error, on-success)")
 }
 
-func runBackup(cmd *cobra.Command) error {
+func runBackup(cmd *cobra.Command) (err error) {
+	startTime := time.Now()
+
 	cfg := GetConfig()
 	if cfg == nil {
 		return fmt.Errorf("configuration not loaded")
 	}
 
+	// Get flags for logging
+	extraTag, _ := cmd.Flags().GetString("tag")
+	notifySuccess, _ := cmd.Flags().GetBool("notify-success")
+	noHooks, _ := cmd.Flags().GetBool("no-hooks")
+
+	// Build flag map for logging
+	flagMap := make(map[string]interface{})
+	if extraTag != "" {
+		flagMap["tag"] = extraTag
+	}
+	if notifySuccess {
+		flagMap["notify-success"] = true
+	}
+	if noHooks {
+		flagMap["no-hooks"] = true
+	}
+
+	// Log command start with context
+	LogCommandStart(cmd, flagMap)
+
+	// Ensure we log command end
+	defer func() {
+		LogCommandEnd(cmd, startTime, err)
+	}()
+
 	// Acquire lock
 	lock := security.NewLock("")
-	if err := lock.Acquire(); err != nil {
+	if err = lock.Acquire(); err != nil {
 		return err
 	}
 	defer func() { _ = lock.Release() }()
@@ -87,7 +115,6 @@ func runBackup(cmd *cobra.Command) error {
 	}
 
 	// Build tags
-	extraTag, _ := cmd.Flags().GetString("tag")
 	tags := cfg.DefaultTags
 	if extraTag != "" {
 		tags = append(tags, extraTag)
@@ -97,11 +124,9 @@ func runBackup(cmd *cobra.Command) error {
 	hostname, _ := os.Hostname()
 
 	// Get notifier
-	notifySuccess, _ := cmd.Flags().GetBool("notify-success")
 	notifier := GetNotifier(notifySuccess)
 
 	// Check if hooks should be skipped
-	noHooks, _ := cmd.Flags().GetBool("no-hooks")
 	if noHooks {
 		PrintInfo("Skipping all hooks (--no-hooks flag set)")
 	}

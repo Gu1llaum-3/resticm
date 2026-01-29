@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -29,7 +30,9 @@ func init() {
 	snapshotsCmd.Flags().Bool("all-backends", false, "Show snapshots from all configured backends")
 }
 
-func runSnapshots(cmd *cobra.Command) error {
+func runSnapshots(cmd *cobra.Command) (err error) {
+	startTime := time.Now()
+
 	cfg := GetConfig()
 	if cfg == nil {
 		return fmt.Errorf("configuration not loaded")
@@ -38,6 +41,26 @@ func runSnapshots(cmd *cobra.Command) error {
 	showLatest, _ := cmd.Flags().GetBool("latest")
 	showAll, _ := cmd.Flags().GetBool("all")
 	allBackends, _ := cmd.Flags().GetBool("all-backends")
+
+	// Build flag map for logging
+	flagMap := make(map[string]interface{})
+	if showLatest {
+		flagMap["latest"] = true
+	}
+	if showAll {
+		flagMap["all"] = true
+	}
+	if allBackends {
+		flagMap["all-backends"] = true
+	}
+
+	// Log command start with context
+	LogCommandStart(cmd, flagMap)
+
+	// Ensure we log command end
+	defer func() {
+		LogCommandEnd(cmd, startTime, err)
+	}()
 
 	// If --all-backends, show snapshots from all backends
 	if allBackends {
