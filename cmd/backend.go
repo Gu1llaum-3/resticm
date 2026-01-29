@@ -16,9 +16,6 @@ var backendCmd = &cobra.Command{
 
 The primary backend uses the main repository configuration.
 Secondary backends are defined in the 'backends' section of the config file.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return showBackend()
-	},
 }
 
 var backendUseCmd = &cobra.Command{
@@ -63,8 +60,9 @@ var backendUseCmd = &cobra.Command{
 }
 
 var backendListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List available backends",
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List available backends",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return listBackends()
 	},

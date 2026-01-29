@@ -18,9 +18,6 @@ var contextCmd = &cobra.Command{
 
 Contexts allow you to easily switch between different configurations
 (e.g., production vs staging, different servers).`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return showContext()
-	},
 }
 
 var contextUseCmd = &cobra.Command{
@@ -59,8 +56,9 @@ Example:
 }
 
 var contextListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List available configuration files",
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List available configuration files",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return listContexts()
 	},
