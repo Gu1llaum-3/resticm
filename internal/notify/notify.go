@@ -271,10 +271,8 @@ func (n *NtfyProvider) Send(msg *Message) error {
 	url := strings.TrimSuffix(n.URL, "/") + "/" + n.Topic
 
 	priority := "default"
-	tags := "white_check_mark"
 	if msg.Status == "error" {
 		priority = "high"
-		tags = "x"
 	}
 
 	req, err := http.NewRequest("POST", url, strings.NewReader(msg.Body))
@@ -284,7 +282,7 @@ func (n *NtfyProvider) Send(msg *Message) error {
 
 	req.Header.Set("Title", msg.Title)
 	req.Header.Set("Priority", priority)
-	req.Header.Set("Tags", tags)
+	// Don't set Tags header - title already contains emoji
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -339,12 +337,7 @@ func (g *GoogleChatProvider) Name() string {
 
 func (g *GoogleChatProvider) Send(msg *Message) error {
 	// Google Chat card format
-	color := "#36a64f"
-	icon := "✅"
-	if msg.Status == "error" {
-		color = "#dc3545"
-		icon = "🚨"
-	}
+	// Note: Title already contains emoji from caller
 
 	// Build widgets for details
 	var widgets []map[string]interface{}
@@ -367,7 +360,7 @@ func (g *GoogleChatProvider) Send(msg *Message) error {
 		"cards": []map[string]interface{}{
 			{
 				"header": map[string]interface{}{
-					"title":    icon + " " + msg.Title,
+					"title":    msg.Title,
 					"subtitle": "resticm backup",
 				},
 				"sections": []map[string]interface{}{
@@ -378,9 +371,6 @@ func (g *GoogleChatProvider) Send(msg *Message) error {
 			},
 		},
 	}
-
-	// Suppress unused variable warning
-	_ = color
 
 	return postJSON(g.URL, payload)
 }
