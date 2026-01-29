@@ -42,11 +42,16 @@ setSystem() {
 
     OS=$(echo `uname`|tr '[:upper:]' '[:lower:]')
     
+    # Only Linux is currently supported
+    if [ "$OS" != "linux" ]; then
+        printf "${RED}Error: Unsupported operating system: $OS${NC}\n"
+        printf "${YELLOW}resticm currently only supports Linux.${NC}\n"
+        printf "${YELLOW}Detected: $OS ($ARCH)${NC}\n"
+        exit 1
+    fi
+    
     # Determine if we need sudo
     if [ "$OS" = "linux" ]; then
-        USE_SUDO="true"
-    fi
-    if [ "$OS" = "darwin" ]; then
         USE_SUDO="true"
     fi
 }
