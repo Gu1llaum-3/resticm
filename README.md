@@ -17,6 +17,7 @@
 - **📊 Structured Logging** - File-based logging with rotation and optional JSON output
 - **🔒 Security** - File locking to prevent concurrent runs, secure permission validation
 - **⏰ Smart Deep Checks** - Automatic deep verification at configurable intervals
+- **🔐 S3 Object Lock Safety** - Automatic stale lock detection for immutable S3 buckets (multi-server aware)
 
 ## 📦 Installation
 
@@ -617,6 +618,46 @@ logging:
 ```yaml
 # Automatically run deep check every N days
 deep_check_interval_days: 30
+```
+
+#### S3 Object Lock Safety (Immutable Buckets)
+
+If you use S3-compatible storage with **Object Lock** (like C2 Object Storage, Wasabi, or AWS S3 with Compliance/Governance mode), you should enable stale lock verification.
+
+**Why this matters:**
+- Restic creates lock files during operations
+- If a lock isn't properly released (crash, network issue, timeout), it becomes "stale"
+- With Object Lock, you **cannot delete** these stale lock files
+- The repository will be **blocked** until the retention period expires (e.g., 14 days!)
+
+**Solution:** Enable `verify_no_locks` in your configuration:
+
+```yaml
+# Enable lock verification after operations (critical for S3 with Object Lock)
+verify_no_locks: true
+```
+
+**Multi-server aware:** If you run resticm on multiple servers backing up to the same repository:
+- ✅ Locks from **other hosts** are normal and not flagged
+- ⚠️ Only locks from **this host** that remain after operations trigger an alert
+- This allows concurrent backups from different servers while still detecting issues
+
+**Example output:**
+```
+🔐 Verifying no stale locks remain...
+✓ No stale locks from this host on primary
+ℹ Note: 2 lock(s) from other hosts (normal in multi-server setup)
+   - server2 (PID 1234) at 03:15:42
+   - server3 (PID 5678) at 03:16:01
+```
+
+If a stale lock is detected from your host:
+```
+⚠️  STALE LOCK DETECTED on primary repository!
+   This host (server1) still has 1 lock(s) that should have been released
+   - Lock from PID 9999 at 2026-02-05 03:00:12
+🚨 IMPORTANT: For S3 with Object Lock (immutable), these locks cannot be removed
+   and will block repository access until the retention period expires.
 ```
 
 ## 🔧 Automation

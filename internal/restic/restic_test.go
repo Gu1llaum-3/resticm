@@ -161,3 +161,52 @@ func TestExecutorVerbose(t *testing.T) {
 		t.Error("Verbose should be true")
 	}
 }
+
+func TestLockVerificationResult(t *testing.T) {
+	result := &LockVerificationResult{
+		CurrentHostname: "server1",
+		HasOwnLocks:     false,
+		HasOtherLocks:   true,
+		OwnHostLocks:    []Lock{},
+		OtherHostLocks: []Lock{
+			{Hostname: "server2", PID: 1234},
+			{Hostname: "server3", PID: 5678},
+		},
+	}
+
+	if result.HasOwnLocks {
+		t.Error("HasOwnLocks should be false")
+	}
+
+	if !result.HasOtherLocks {
+		t.Error("HasOtherLocks should be true")
+	}
+
+	if len(result.OtherHostLocks) != 2 {
+		t.Errorf("len(OtherHostLocks) = %d, want 2", len(result.OtherHostLocks))
+	}
+}
+
+func TestLockVerificationResultWithOwnLocks(t *testing.T) {
+	result := &LockVerificationResult{
+		CurrentHostname: "server1",
+		HasOwnLocks:     true,
+		HasOtherLocks:   false,
+		OwnHostLocks: []Lock{
+			{Hostname: "server1", PID: 9999},
+		},
+		OtherHostLocks: []Lock{},
+	}
+
+	if !result.HasOwnLocks {
+		t.Error("HasOwnLocks should be true - this indicates a stale lock problem!")
+	}
+
+	if result.HasOtherLocks {
+		t.Error("HasOtherLocks should be false")
+	}
+
+	if len(result.OwnHostLocks) != 1 {
+		t.Errorf("len(OwnHostLocks) = %d, want 1", len(result.OwnHostLocks))
+	}
+}

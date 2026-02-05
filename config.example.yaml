@@ -100,6 +100,34 @@ default_tags:
 - resticm
 
 # ============================================================================
+# S3 OBJECT LOCK SAFETY
+# ============================================================================
+#
+# ⚠️  CRITICAL FOR S3 WITH OBJECT LOCK (Immutable Buckets)
+#
+# If you use S3 with Object Lock (like C2 Object Storage, Wasabi, or AWS S3
+# with Compliance/Governance mode), enable this option to verify that no
+# stale restic locks remain after operations.
+#
+# WHY THIS MATTERS:
+# - Restic creates lock files in the repository during operations
+# - These locks should be automatically released when operations complete
+# - If a lock is not released (crash, network issue, timeout), it becomes "stale"
+# - With Object Lock, you CANNOT delete these stale lock files
+# - The repository will be BLOCKED until the retention period expires (e.g., 14 days)
+#
+# WHAT THIS OPTION DOES:
+# - After each operation, verifies no locks from THIS host remain
+# - Locks from OTHER hosts are normal (multi-server setup) and not flagged
+# - Alerts you immediately if a stale lock is detected
+# - Helps you react quickly instead of discovering the issue 24h later
+#
+# ============================================================================
+
+# Enable lock verification after operations (recommended for S3 with Object Lock)
+verify_no_locks: true
+
+# ============================================================================
 # SECONDARY BACKENDS (for replication)
 # ============================================================================
 #

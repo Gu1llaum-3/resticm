@@ -328,6 +328,89 @@ func runFull(cmd *cobra.Command) (err error) {
 		}
 	}
 
+	// Verify no stale locks remain (important for S3 with Object Lock)
+	if cfg.VerifyNoLocks {
+		fmt.Println("\n" + separator)
+		fmt.Println("🔐 LOCK VERIFICATION")
+		fmt.Println(separator)
+
+		lockCheckFailed := false
+		var staleLockRepos []string
+
+		// Check primary repository
+		if result, err := executor.VerifyNoStaleLocks(hostname); err != nil {
+			PrintWarning("Could not verify locks on primary: %v", err)
+		} else {
+			if result.HasOwnLocks {
+				lockCheckFailed = true
+				staleLockRepos = append(staleLockRepos, "primary")
+				PrintError("⚠️  STALE LOCK DETECTED on primary repository!")
+				PrintError("   This host (%s) still has %d lock(s) that should have been released", hostname, len(result.OwnHostLocks))
+				for _, lock := range result.OwnHostLocks {
+					PrintError("   - Lock from PID %d at %s", lock.PID, lock.Time.Format("2006-01-02 15:04:05"))
+				}
+				PrintError("   With S3 Object Lock, this could block the repository!")
+				errors = append(errors, fmt.Errorf("stale lock detected from this host on primary repository"))
+			} else {
+				PrintSuccess("No stale locks from this host on primary")
+			}
+			if result.HasOtherLocks {
+				PrintInfo("Note: %d lock(s) from other hosts (normal in multi-server setup)", len(result.OtherHostLocks))
+				for _, lock := range result.OtherHostLocks {
+					PrintInfo("   - %s (PID %d) at %s", lock.Hostname, lock.PID, lock.Time.Format("15:04:05"))
+				}
+			}
+		}
+
+		// Check copy backends
+		for _, backendName := range cfg.CopyToBackends {
+			backend := cfg.Backends[backendName]
+			backendExecutor := restic.NewExecutor(backend.Repository, backend.Password)
+			backendExecutor.SetAWSCredentials(backend.AWSAccessKeyID, backend.AWSSecretAccessKey)
+
+			if result, err := backendExecutor.VerifyNoStaleLocks(hostname); err != nil {
+				PrintWarning("Could not verify locks on %s: %v", backendName, err)
+			} else {
+				if result.HasOwnLocks {
+					lockCheckFailed = true
+					staleLockRepos = append(staleLockRepos, backendName)
+					PrintError("⚠️  STALE LOCK DETECTED on backend %s!", backendName)
+					PrintError("   This host (%s) still has %d lock(s)", hostname, len(result.OwnHostLocks))
+					errors = append(errors, fmt.Errorf("stale lock detected from this host on backend %s", backendName))
+				} else {
+					PrintSuccess("No stale locks from this host on %s", backendName)
+				}
+			}
+		}
+
+		if lockCheckFailed {
+			PrintError("")
+			PrintError("🚨 IMPORTANT: Stale locks were detected!")
+			PrintError("   For S3 with Object Lock (immutable), these locks cannot be removed")
+			PrintError("   and will block repository access until the retention period expires.")
+			PrintError("   Consider investigating why the locks were not properly released.")
+
+			// Send immediate critical notification for stale locks
+			notifier := GetNotifier(false)
+			_ = notifier.NotifyError(
+				"🚨 CRITICAL: Stale Lock Detected!",
+				fmt.Sprintf("resticm detected stale lock(s) on %s that could NOT be released!\n\n"+
+					"⚠️ With S3 Object Lock, the repository will be BLOCKED until the retention period expires.\n\n"+
+					"Affected repositories: %s\n"+
+					"Host: %s\n\n"+
+					"IMMEDIATE ACTION REQUIRED: Investigate why locks were not released.",
+					hostname, strings.Join(staleLockRepos, ", "), hostname),
+				fmt.Errorf("stale locks detected on: %s", strings.Join(staleLockRepos, ", ")),
+				map[string]string{
+					"host":         hostname,
+					"severity":     "critical",
+					"repositories": strings.Join(staleLockRepos, ", "),
+					"issue":        "stale_lock",
+				},
+			)
+		}
+	}
+
 	// Summary
 	fmt.Println("\n" + strings.Repeat("═", 50))
 	fmt.Println("📊 SUMMARY")

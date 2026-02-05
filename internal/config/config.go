@@ -50,6 +50,9 @@ type Config struct {
 
 	// Logging configuration
 	Logging LoggingConfig `yaml:"logging"`
+
+	// Verify no locks remain after operations (recommended for S3 with Object Lock)
+	VerifyNoLocks bool `yaml:"verify_no_locks"`
 }
 
 // RetentionConfig defines the retention policy
